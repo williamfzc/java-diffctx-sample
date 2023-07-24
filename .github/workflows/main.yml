@@ -3,57 +3,38 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - '*'
   pull_request:
     branches:
       - '*'
 
 permissions:
-  contents: read #  to fetch code (actions/checkout)
+  contents: write #  to fetch code (actions/checkout)
 
 jobs:
-
   build-and-verify:
-    name: Build and verify (JDK ${{ matrix.java }})
+    name: Build and verify (JDK 8)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        java: ['6', '8', '11', '17', '18']
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+        with:
+          # at least support HEAD~1 for testing
+          fetch-depth: 2
       - name: Download Maven # Download with default JDK because OpenJDK 6 does not support TLS 1.2
         run: ./mvnw --version
-      - name: Set up JDK 6
-        if: ${{ matrix.java == '6'}}
-        uses: actions/setup-java@v1
-        with:
-          java-version: ${{ matrix.java }}
+
       - name: Set up JDK
-        if: ${{ matrix.java != '6'}}
         uses: actions/setup-java@v2
         with:
-          java-version: ${{ matrix.java }}
+          java-version: '8'
           distribution: temurin
-          cache: maven
-      - name: Build and verify
-        run: ./mvnw verify javadoc:javadoc site:site --batch-mode --errors --settings .github/workflows/settings.xml
 
-  publish-snapshots:
-    name: Publish snapshot artifacts
-    if: github.event_name == 'push' && github.repository == 'junit-team/junit4' && github.ref == 'refs/heads/main'
-    needs: build-and-verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Download Maven # Download with default JDK because OpenJDK 6 does not support TLS 1.2
-        run: ./mvnw --version
-      - name: Set up JDK
-        uses: actions/setup-java@v1
+      - name: Build and verify
+        run: ./mvnw clean verify javadoc:javadoc site:site --batch-mode --errors --settings .github/workflows/settings.xml
+
+      - name: diffctx
+        uses: williamfzc/diffctx@v0.3.8
         with:
-          java-version: 8
-      - name: Publish snapshot artifacts
-        env:
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-        run: ./mvnw deploy --batch-mode --errors --activate-profiles generate-docs --settings .github/workflows/settings.xml
+          lang: java
+          # https://sourcegraph.github.io/scip-java/docs/getting-started.html#run-scip-java-index
+          index_cmd: scip-java index -- package -DskipTests --batch-mode --errors --settings .github/workflows/settings.xml
